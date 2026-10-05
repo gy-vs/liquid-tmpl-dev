@@ -139,6 +139,39 @@ describe('tags/tablerow', function () {
       return expect(html).toBe(dst)
     })
   })
+  describe('parentloop', function () {
+    it('should not count as a loop level for nested for', async function () {
+      const src = '{% for g in (1..2) %}{% tablerow i in (1..2) cols:2 %}' +
+        '{% for p in (1..1) %}p={{ forloop.parentloop.index }};{% endfor %}' +
+        '{{ tablerowloop.index }}' +
+        '{% endtablerow %}{% endfor %}'
+      const dst =
+        '<tr class="row1"><td class="col1">p=1;1</td><td class="col2">p=1;2</td></tr>' +
+        '<tr class="row1"><td class="col1">p=2;1</td><td class="col2">p=2;2</td></tr>'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe(dst)
+    })
+
+    it('should point to the nearest enclosing for across two tablerow tags', async function () {
+      const src = '{% for g in (1..1) %}{% tablerow i in (1..1) %}{% tablerow j in (1..1) %}' +
+        '{% for p in (1..1) %}{{ forloop.parentloop.index }}{% endfor %}' +
+        '{% endtablerow %}{% endtablerow %}{% endfor %}'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toContain('1')
+    })
+
+    it('should keep tablerowloop fields unchanged alongside parentloop', async function () {
+      const src = '{% for g in (1..1) %}{% tablerow i in (1..2) cols:2 %}' +
+        '{{ tablerowloop.first }} {{ tablerowloop.col }} ' +
+        '{% for p in (1..1) %}[{{ forloop.parentloop.index }}]{% endfor %}' +
+        '{% endtablerow %}{% endfor %}'
+      const dst =
+        '<tr class="row1"><td class="col1">true 1 [1]</td><td class="col2">false 2 [1]</td></tr>'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe(dst)
+    })
+  })
+
   describe('sync support', function () {
     it('should support tablerow', function () {
       const src = '{% tablerow i in (1..3)%}{{ i }}{% endtablerow %}'

@@ -405,6 +405,47 @@ describe('Variable analysis', () => {
     })
   })
 
+  it('should not report forloop.parentloop inside a nested for as global', () => {
+    const source = [
+      '{% for g in groups %}',
+      '  {% for p in g.items %}',
+      '    {{ forloop.parentloop.index }}-{{ forloop.index }}',
+      '  {% endfor %}',
+      '{% endfor %}'
+    ].join('\n')
+
+    const template = engine.parse(source)
+    const analysis = analyzeSync(template)
+
+    expect(Object.keys(analysis.globals)).toEqual(['groups'])
+    expect(analysis.variables).toHaveProperty('forloop')
+    expect(analysis.variables.forloop).toEqual([
+      new Variable(['forloop', 'parentloop', 'index'], { row: 3, col: 8, file: undefined }),
+      new Variable(['forloop', 'index'], { row: 3, col: 39, file: undefined })
+    ])
+  })
+
+  it('should report forloop.parentloop outside of any loop as global', () => {
+    const source = '{{ forloop.parentloop.index }}'
+    const template = engine.parse(source)
+    const analysis = analyzeSync(template)
+
+    const forloop = [new Variable(['forloop', 'parentloop', 'index'], { row: 1, col: 4, file: undefined })]
+    expect(analysis).toStrictEqual({
+      variables: { forloop },
+      globals: { forloop },
+      locals: {}
+    })
+  })
+
+  it('should not report forloop.parentloop at the outermost loop as global', () => {
+    const source = '{% for g in groups %}{% if forloop.parentloop.last and forloop.last %}x{% endif %}{% endfor %}'
+    const template = engine.parse(source)
+    const analysis = analyzeSync(template)
+
+    expect(Object.keys(analysis.globals)).toEqual(['groups'])
+  })
+
   it('should report variables from if tags', () => {
     const source = [
       '{% if x %}',

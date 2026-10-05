@@ -65,6 +65,8 @@ export default class extends Tag {
       const { value, alias } = this['for']
       const collection = toEnumerable(yield evalToken(value, ctx))
       scope['forloop'] = new ForloopDrop(collection.length, value.getText(), alias)
+      // exposed to nested `for` loops in the rendered (isolated) template
+      childCtx.getRegister('forloop').forloop = scope['forloop']
       for (const item of collection) {
         scope[alias] = item
         const templates = (yield liquid._parsePartialFile(filepath, childCtx.sync, this['currentFile'])) as Template[]

@@ -426,4 +426,125 @@ describe('tags/for', function () {
       return expect(html).toBe('i-someDrop i-someDrop i-someDrop ')
     })
   })
+
+  describe('parentloop', function () {
+    const groups = [
+      { items: ['a', 'b'] },
+      { items: ['c'] }
+    ]
+
+    it('should expose the outer forloop in a nested for', async function () {
+      const src = '{% for g in groups %}' +
+        '{% for p in g.items %}{{ forloop.parentloop.index }}-{{ forloop.index }} {% endfor %}' +
+        '{% endfor %}'
+      const html = await liquid.parseAndRender(src, { groups })
+      return expect(html).toBe('1-1 1-2 2-1 ')
+    })
+
+    it('should mirror all fields of the outer forloop', async function () {
+      const src = '{% for g in groups %}' +
+        '{% for p in g.items %}' +
+        '{{ forloop.parentloop.index }}.{{ forloop.parentloop.index0 }}.' +
+        '{{ forloop.parentloop.rindex }}.{{ forloop.parentloop.rindex0 }}.' +
+        '{{ forloop.parentloop.length }}.{{ forloop.parentloop.first }}.' +
+        '{{ forloop.parentloop.last }} ' +
+        '{% endfor %}{% endfor %}'
+      const html = await liquid.parseAndRender(src, { groups })
+      return expect(html).toBe(
+        '1.0.2.1.2.true.false 1.0.2.1.2.true.false 2.1.1.0.2.false.true '
+      )
+    })
+
+    it('should chain parentloop across three nested loops', async function () {
+      const src = '{% for a in xs %}{% for b in a.ys %}{% for c in b.zs %}' +
+        '{{ forloop.parentloop.parentloop.index }}-{{ forloop.parentloop.index }}-{{ forloop.index }} ' +
+        '{% endfor %}{% endfor %}{% endfor %}'
+      const html = await liquid.parseAndRender(src, { xs: [{ ys: [{ zs: [1, 2] }] }, { ys: [{ zs: [3] }] }] })
+      return expect(html).toBe('1-1-1 1-1-2 2-1-1 ')
+    })
+
+    it('should be empty and falsy for the outermost loop', async function () {
+      const src = '{% for i in (1..2) %}[{{ forloop.parentloop }}]' +
+        '{% if forloop.parentloop %}T{% else %}F{% endif %} ' +
+        '{% endfor %}'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe('[]F []F ')
+    })
+
+    it('should stay empty and falsy under strictVariables', async function () {
+      const engine = new Liquid({ strictVariables: true })
+      const src = '{% for i in (1..2) %}[{{ forloop.parentloop }}]' +
+        '{% if forloop.parentloop and forloop.parentloop.index %}{% endif %}' +
+        '{% if forloop.parentloop %}T{% else %}F{% endif %} {% endfor %}'
+      const html = await engine.parseAndRender(src)
+      return expect(html).toBe('[]F []F ')
+    })
+
+    it('should not disturb the outer forloop once the inner loop ends', async function () {
+      const src = '{% for a in (1..3) %}' +
+        '{% for b in (1..2) %}{{ forloop.parentloop.index }}{% endfor %}' +
+        '{{ forloop.index }}:{{ forloop.first }}:{{ forloop.last }} ' +
+        '{% endfor %}'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe('111:true:false 222:false:false 333:false:true ')
+    })
+
+    it('should reflect the outer state with continue', async function () {
+      const src = '{% for a in (1..3) %}{% for b in (1..3) %}' +
+        '{% if b == 2 %}{% continue %}{% endif %}' +
+        '{{ forloop.parentloop.index }}' +
+        '{% endfor %}|{% endfor %}'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe('11|22|33|')
+    })
+
+    it('should reflect the outer state with break', async function () {
+      const src = '{% for a in (1..3) %}{% for b in (1..3) %}' +
+        '{% if forloop.parentloop.index == 2 and b == 2 %}{% break %}{% endif %}' +
+        '{{ forloop.parentloop.index }}-{{ b }} ' +
+        '{% endfor %}{% endfor %}'
+      const html = await liquid.parseAndRender(src)
+      return expect(html).toBe('1-1 1-2 1-3 2-1 3-1 3-2 3-3 ')
+    })
+
+    it('should reflect offset, limit and reversed of the outer loop', async function () {
+      const src = '{% for a in xs limit:2 offset:1 reversed %}{% for b in (1..1) %}' +
+        '{{ forloop.parentloop.index }}:{{ forloop.parentloop.length }}:' +
+        '{{ forloop.parentloop.first }}:{{ forloop.parentloop.last }} ' +
+        '{% endfor %}{% endfor %}'
+      const html = await liquid.parseAndRender(src, { xs: [1, 2, 3, 4] })
+      return expect(html).toBe('1:2:true:false 2:2:false:true ')
+    })
+
+    it('should be visible through include which shares the context', async function () {
+      mock({
+        '/outer.html': '{% for g in groups %}{% include "inner.html" %}{% endfor %}',
+        '/inner.html': '{% for p in g.items %}{{ forloop.parentloop.index }}-{{ forloop.index }} {% endfor %}'
+      })
+      const engine = new Liquid({ root: '/', extname: '.html' })
+      const html = await engine.renderFile('/outer.html', { groups })
+      return expect(html).toBe('1-1 1-2 2-1 ')
+    })
+
+    it('should not leak through render which is isolated', async function () {
+      mock({
+        '/outer.html': '{% for g in groups %}{% render "inner.html" %}{% endfor %}',
+        '/inner.html': '{% for p in (1..2) %}[{{ forloop.parentloop }}]{% endfor %}'
+      })
+      const engine = new Liquid({ root: '/', extname: '.html' })
+      const html = await engine.renderFile('/outer.html', { groups })
+      return expect(html).toBe('[][][][]')
+    })
+
+    it('should be empty for the forloop generated by render"s for parameter', async function () {
+      mock({
+        '/outer.html': '{% render "inner.html" for groups as group %}',
+        '/inner.html': '{{ forloop.parentloop }}|' +
+          '{% for p in group.items %}{{ forloop.parentloop.index }}.{{ forloop.index }} {% endfor %}'
+      })
+      const engine = new Liquid({ root: '/', extname: '.html' })
+      const html = await engine.renderFile('/outer.html', { groups })
+      return expect(html).toBe('|1.1 1.2 |2.1 ')
+    })
+  })
 })
