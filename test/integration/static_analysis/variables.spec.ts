@@ -405,6 +405,42 @@ describe('Variable analysis', () => {
     })
   })
 
+  it('should not report forloop.parentloop as global in nested for tags', () => {
+    const source = [
+      '{% for x in (1..2) %}',
+      '  {% for y in (1..2) %}',
+      '    {{ forloop.parentloop.index }}',
+      '  {% endfor %}',
+      '{% endfor %}'
+    ].join('\n')
+
+    const template = engine.parse(source)
+    const analysis = analyzeSync(template)
+
+    expect(analysis).toStrictEqual({
+      variables: {
+        'forloop': [
+          new Variable(['forloop', 'parentloop', 'index'], { row: 3, col: 8, file: undefined })
+        ]
+      },
+      globals: {},
+      locals: {}
+    })
+  })
+
+  it('should report forloop.parentloop as global outside of for tags', () => {
+    const template = engine.parse('{{ forloop.parentloop }}')
+    const analysis = analyzeSync(template)
+
+    const forloop = [new Variable(['forloop', 'parentloop'], { row: 1, col: 4, file: undefined })]
+
+    expect(analysis).toStrictEqual({
+      variables: { forloop },
+      globals: { forloop },
+      locals: {}
+    })
+  })
+
   it('should report variables from if tags', () => {
     const source = [
       '{% if x %}',

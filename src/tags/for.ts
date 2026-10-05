@@ -65,8 +65,17 @@ export default class extends Tag {
     }, collection)
 
     ctx.setRegister(continueKey, (hash['offset'] || 0) + collection.length)
-    const scope = { forloop: new ForloopDrop(collection.length, this.collection.getText(), this.variable) }
+    const parentloop = ctx.getRegister('forloop')
+    const forloop = new ForloopDrop(
+      collection.length,
+      this.collection.getText(),
+      this.variable,
+      parentloop instanceof ForloopDrop ? parentloop : undefined
+    )
+    const scope = { forloop }
     ctx.push(scope)
+    const forloopRegister = ctx.saveRegister('forloop')
+    ctx.setRegister('forloop', forloop)
     for (const item of collection) {
       scope[this.variable] = item
       ctx.continueCalled = ctx.breakCalled = false
@@ -76,6 +85,7 @@ export default class extends Tag {
     }
     ctx.continueCalled = ctx.breakCalled = false
     ctx.pop()
+    ctx.restoreRegister(forloopRegister)
   }
 
   public * children (): Generator<unknown, Template[]> {
